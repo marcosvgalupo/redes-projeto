@@ -15,6 +15,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
+import java.util.Random;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -23,6 +24,14 @@ public class RecebeDados extends Thread {
     private final int portaLocalReceber = 2001;
     private final int portaLocalEnviar = 2002;
     private final int portaDestino = 2003;
+
+
+    private boolean pacoteFoiPerdido(){
+        var random = new Random();
+        float probabilidadeDePerda = random.nextFloat();
+
+        return probabilidadeDePerda <= 0.6;
+    }
 
     private void enviaAck(boolean fim) {
 
@@ -59,6 +68,10 @@ public class RecebeDados extends Thread {
 
                     byte[] tmp = receivePacket.getData();
 
+                    boolean perdido = pacoteFoiPerdido();
+                    if(perdido){
+
+                    }
                     //probabilidade de 60% de perder
                     //gero um numero aleatorio contido entre [0,1]
                     //se numero cair no intervalo [0, 0,6)

@@ -29,6 +29,8 @@ public class EnviaDados extends Thread {
     Semaphore sem;
     private final String funcao;
 
+    private int numeroSequencia = 0;
+
     public EnviaDados(Semaphore sem, String funcao) {
         super(funcao);
         this.sem = sem;
@@ -40,6 +42,7 @@ public class EnviaDados extends Thread {
     }
 
     private void enviaPct(int[] dados) {
+
         //converte int[] para byte[]
         ByteBuffer byteBuffer = ByteBuffer.allocate(dados.length * 4);
         IntBuffer intBuffer = byteBuffer.asIntBuffer();
@@ -73,29 +76,31 @@ public class EnviaDados extends Thread {
         switch (this.getFuncao()) {
             case "envia":
                 //variavel onde os dados lidos serao gravados
-                int[] dados = new int[350];
+                int[] dados = new int[351]; // [numeroSequencia, dados....]
                 //contador, para gerar pacotes com 1400 Bytes de tamanho
-                //como cada int ocupa 4 Bytes, estamos lendo blocos com 350
+                //como cada int ocupa 4 Bytes, estamos lendo blocos com 350 e 1 byte para o número de sequência
                 //int's por vez.
-                int cont = 0;
+                int cont = 1; // pular a posição do número de sequẽncia
 
                 try (FileInputStream fileInput = new FileInputStream("entrada");) {
                     int lido;
                     while ((lido = fileInput.read()) != -1) {
                         dados[cont] = lido;
                         cont++;
-                        if (cont == 350) {
+                        if (cont == 351) {
                             //envia pacotes a cada 350 int's lidos.
                             //ou seja, 1400 Bytes.
+                            dados[0] = numeroSequencia;
+                            numeroSequencia++;
                             enviaPct(dados);
-                            cont = 0;
+                            cont = 1;
                         }
                     }
 
                     //ultimo pacote eh preenchido com
                     //-1 ate o fim, indicando que acabou
                     //o envio dos dados.
-                    for (int i = cont; i < 350; i++)
+                    for (int i = cont; i < 351; i++)
                         dados[i] = -1;
                     enviaPct(dados);
                 } catch (IOException e) {
