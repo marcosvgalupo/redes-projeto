@@ -8,7 +8,7 @@ public class Main {
         RecebeDados rd = new RecebeDados();
         rd.start();
 
-        Semaphore sem = new Semaphore(6);
+        Semaphore sem = new Semaphore(1);
         EnviaDados ed1 = new EnviaDados(sem, "envia");
         EnviaDados ed2 = new EnviaDados(sem, "ack");
 
