@@ -17,6 +17,9 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Timer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.concurrent.Semaphore;
@@ -26,11 +29,13 @@ public class EnviaDados extends Thread {
     private final int portaLocalEnvio = 2000;
     private final int portaDestino = 2001;
     private final int portaLocalRecebimento = 2003;
+    private final long TIMEOUT = 1000;
     Semaphore sem;
     private final String funcao;
     private int numeroTotalDePacotes = 0;
-
     private int numeroSequencia = 0;
+    private Map<Integer, Timer> timers = new HashMap<>();
+
 
     public EnviaDados(Semaphore sem, String funcao) {
         super(funcao);
@@ -40,6 +45,24 @@ public class EnviaDados extends Thread {
 
     public String getFuncao() {
         return funcao;
+    }
+
+    private synchronized void startTimer(int seqNum, int[] dados) {
+        Timer timer = new Timer();
+        timer.schedule(new RetransmissionTask(this, dados), TIMEOUT);
+        timers.put(seqNum, timer);
+    }
+
+    private synchronized void stopTimer(int seqNum) {
+        Timer timer = timers.remove(seqNum);
+        if (timer != null) {
+            timer.cancel();
+        }
+    }
+
+    public synchronized void retransmit(int[] dados) {
+        System.out.println("Retransmitindo pacote: " + dados[0]);
+        enviaPct(dados);
     }
 
     private void enviaPct(int[] dados) {
@@ -65,6 +88,9 @@ public class EnviaDados extends Thread {
             }
 
             System.out.println("Envio feito.");
+
+            startTimer(dados[0],dados);
+
         } catch (SocketException ex) {
             Logger.getLogger(EnviaDados.class.getName()).log(Level.SEVERE, null, ex);
         } catch (IOException | InterruptedException ex) {
@@ -117,8 +143,10 @@ public class EnviaDados extends Thread {
                         DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                         serverSocket.receive(receivePacket);
                         retorno = new String(receivePacket.getData());
+                        int numeroDeSequencia = retorno.charAt(0);
                         System.out.println("Ack recebido " + retorno + ".");
                         sem.release();
+                        stopTimer(numeroDeSequencia);
                         numeroTotalDePacotes++;
                     }
                     System.out.println("Numero total de pacotes: " + numeroTotalDePacotes);
@@ -128,6 +156,7 @@ public class EnviaDados extends Thread {
                 break;
             //TODO timer
             default:
+
                 break;
         }
 
