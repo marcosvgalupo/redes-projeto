@@ -25,6 +25,8 @@ public class RecebeDados extends Thread {
     private final int portaLocalEnviar = 2002;
     private final int portaDestino = 2003;
 
+    private final int numeroSequenciaEsperado = 0;
+
 
     private boolean pacoteFoiPerdido(){
         var random = new Random();
@@ -58,7 +60,7 @@ public class RecebeDados extends Thread {
     public void run() {
         try {
             DatagramSocket serverSocket = new DatagramSocket(portaLocalReceber);
-            byte[] receiveData = new byte[1400];
+            byte[] receiveData = new byte[1404];
             try (FileOutputStream fileOutput = new FileOutputStream("saida")) {
                 boolean fim = false;
                 while (!fim) {
@@ -67,6 +69,11 @@ public class RecebeDados extends Thread {
                     System.out.println("dado recebido");
 
                     byte[] tmp = receivePacket.getData();
+                    int numeroSequencia = ((tmp[0] & 0xff) << 24) + ((tmp[1] & 0xff) << 16) + ((tmp[2] & 0xff) << 8) + ((tmp[3] & 0xff));
+
+                    if(numeroSequencia != numeroSequenciaEsperado){
+                        System.out.println("Pacote fora de ordem!!!");
+                    }
 
                     boolean perdido = pacoteFoiPerdido();
                     if(perdido){
@@ -80,7 +87,7 @@ public class RecebeDados extends Thread {
                     //se o numero cair no intervalo [0,6, 1,0]
                     //assume-se o recebimento com sucesso.
 
-                    for (int i = 0; i < tmp.length; i = i + 4) {
+                    for (int i = 4; i < tmp.length; i = i + 4) {
                         int dados = ((tmp[i] & 0xff) << 24) + ((tmp[i + 1] & 0xff) << 16) + ((tmp[i + 2] & 0xff) << 8) + ((tmp[i + 3] & 0xff));
 
                         if (dados == -1) {

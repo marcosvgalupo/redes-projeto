@@ -28,8 +28,9 @@ public class EnviaDados extends Thread {
     private final int portaLocalRecebimento = 2003;
     Semaphore sem;
     private final String funcao;
-    private int numeroTotalDePacotes = 0;
 
+
+    private int numeroTotalDePacotes = 0;
     private int numeroSequencia = 0;
 
     public EnviaDados(Semaphore sem, String funcao) {
@@ -76,11 +77,11 @@ public class EnviaDados extends Thread {
     public void run() {
         switch (this.getFuncao()) {
             case "envia":
-                //variavel onde os dados lidos serao gravados
-                int[] dados = new int[351]; // [numeroSequencia, dados....]
-                //contador, para gerar pacotes com 1400 Bytes de tamanho
-                //como cada int ocupa 4 Bytes, estamos lendo blocos com 350 e 1 byte para o número de sequência
-                //int's por vez.
+
+                int[] dados = new int[351]; // estrutura: [numeroSequencia, dados....]
+                //contador, para gerar pacotes com 1404 Bytes de tamanho (1400 bytes de dados e 1 do numero de sequencia)
+                //como cada int ocupa 4 Bytes, estamos lendo blocos com 350 bytes e 1 byte para o número de sequência
+
                 int cont = 1; // pular a posição do número de sequẽncia
 
                 try (FileInputStream fileInput = new FileInputStream("entrada");) {
@@ -90,11 +91,11 @@ public class EnviaDados extends Thread {
                         cont++;
                         if (cont == 351) {
                             //envia pacotes a cada 350 int's lidos.
-                            //ou seja, 1400 Bytes.
+                            //ou seja, 1400 Bytes de dados.
                             dados[0] = numeroSequencia;
                             numeroSequencia++;
                             enviaPct(dados);
-                            cont = 1;
+                            cont = 1; //reseta para o pŕoximo pacote
                         }
                     }
 
