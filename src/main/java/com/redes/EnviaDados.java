@@ -28,6 +28,7 @@ public class EnviaDados extends Thread {
     private final int portaLocalRecebimento = 2003;
     Semaphore sem;
     private final String funcao;
+    private int numeroTotalDePacotes = 0;
 
     private int numeroSequencia = 0;
 
@@ -118,7 +119,9 @@ public class EnviaDados extends Thread {
                         retorno = new String(receivePacket.getData());
                         System.out.println("Ack recebido " + retorno + ".");
                         sem.release();
+                        numeroTotalDePacotes++;
                     }
+                    System.out.println("Numero total de pacotes: " + numeroTotalDePacotes);
                 } catch (IOException e) {
                     System.out.println("Excecao: " + e.getMessage());
                 }
