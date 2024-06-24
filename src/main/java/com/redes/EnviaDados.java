@@ -17,6 +17,7 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Stack;
 import java.util.TimerTask;
@@ -29,7 +30,7 @@ public class EnviaDados extends Thread {
     private final int portaLocalEnvio = 2000;
     private final int portaDestino = 2001;
     private final int portaLocalRecebimento = 2003;
-    private final HashMap<Integer, int[]> bufferPacotes = new HashMap<>();
+    private static final HashMap<Integer, int[]> bufferPacotes = new HashMap<>();
     private final Stack<Integer> acksDuplicados = new Stack<Integer>();
     private static Timeout timeout;
 
@@ -55,46 +56,74 @@ public class EnviaDados extends Thread {
         numeroSequencia++;
     }
 
-
     private synchronized void setNumeroSequencia(int numero) {
         EnviaDados.numeroSequencia = numero;
     }
 
     private synchronized void setAckEsperado(int ack) {EnviaDados.ackEsperado = ack;}
 
-
-    public void retransmitirPacotes(int seq) throws InterruptedException {
-//        for(int i = seq; i < numeroSequencia; i++){
-//            //var timeoutAtual = timeout.getTasks().get(i);
-//            //if(timeoutAtual != null){
-//             //   timeout.stopTimer(i);
-//            //}
-//            //ackEsperado++;
-//        }
+    public synchronized void retransmitirPacotes(int seq) throws InterruptedException {
+        sem = new Semaphore((numeroSequencia+1) - seq);
+        for(int i = seq; i < numeroSequencia; i++){
+            //var timeoutAtual = timeout.getTasks().get(i);
+            //if(timeoutAtual != null){
+                //timeout.stopTimer(i);
+            //}
+        }
 
 
         if(seq != numeroSequencia){
             //timeout.setMilliseconds(timeout.getMilliseconds() * 2);
-            System.out.println(colors.RED + "PACOTES " + seq + " ao " + numeroSequencia + " descartados!" + colors.RESET);
+            System.out.println(colors.RED + "PACOTE " + seq + "perdido e pacotes " + (seq+1) + " ao " + numeroSequencia + " descartados!" + colors.RESET);
             for(int i = seq; i < numeroSequencia; i ++){
                 if(bufferPacotes.get(i) != null) {
                     System.out.println(colors.RED + "RETRANSMITINDO: " + i + colors.RESET);
-                    int dadosRetransmitir[] = bufferPacotes.get(i);
+                    int[] dadosRetransmitir = bufferPacotes.get(i);
                     System.out.println("numseq: " + seq + "---- dados[0]: " + dadosRetransmitir[0]);
                     enviaPct(dadosRetransmitir, true);
+                    Thread.sleep(2000);
+                    ackEsperado++;
                 }
             }
+
         }
         else if (bufferPacotes.get(seq) != null){
             //timeout.setMilliseconds(timeout.getMilliseconds() * 2);
-            int data[] = bufferPacotes.get(seq);
+            int[] data = bufferPacotes.get(seq);
             enviaPct(data, true);
         }
     }
 
-    public String getFuncao() {
-        return funcao;
+    private synchronized void tresAcksDuplicados(int numACK) throws InterruptedException {
+        if (numACK != ackEsperado && numACK != -1) {
+
+            System.out.println(colors.MAGENTA + "ACK " + numACK + " DUPLICADO" + colors.RESET);
+
+            acksDuplicados.push(numACK);
+            if(acksDuplicados.size() == 3){
+
+                System.out.println(colors.RED + "REENVIO DE PACOTE POR 3 ACKS [" + numACK+ "] DUPLICADOS" + colors.RESET);
+
+                System.out.println("teste dele, o homem: " + numACK + " testando......: " + bufferPacotes.containsKey(numACK));
+                setAckEsperado(numACK);
+                System.out.println("novo ack esperado com base no num ack: " + ackEsperado);
+
+                retransmitirPacotes(numACK+1);
+                while(!acksDuplicados.isEmpty()){
+                    acksDuplicados.pop();
+                }
+                setNumeroSequencia(ackEsperado);
+            }
+        }
+        else{
+            if(numACK == -1)
+                System.out.println(colors.YELLOW + "ACK " + (numeroSequencia-1) + " recebido." + colors.RESET);
+            else
+                System.out.println(colors.YELLOW + "ACK " + numACK + " recebido." + colors.RESET);
+        }
     }
+
+    public String getFuncao() {return funcao;}
 
 
     private void enviaPct(int[] dados, boolean ehRetransmissao) {
@@ -163,6 +192,7 @@ public class EnviaDados extends Thread {
                     //o envio dos dados.
                     for (int i = cont; i < 351; i++)
                         dados[i] = -1;
+                    dados[0] = numeroSequencia;
                     enviaPct(dados, false);
                 } catch (IOException e) {
                     System.out.println("Error message: " + e.getMessage());
@@ -184,27 +214,9 @@ public class EnviaDados extends Thread {
                             acksDuplicados.pop();
                             acksDuplicados.push(numACK);
                         }
+                        tresAcksDuplicados(numACK);
+                        ackEsperado++;
 
-                        if (numACK != ackEsperado) {
-
-                            System.out.println(colors.MAGENTA + "ACK " + numACK + " DUPLICADO" + colors.RESET);
-
-                            acksDuplicados.push(numACK);
-                            if(acksDuplicados.size() == 3){
-                                System.out.println(colors.RED + "REENVIO DE PACOTE POR 3 ACKS [" + numACK+ "] DUPLICADOS" + colors.RESET);
-                                setAckEsperado(numACK);
-                                System.out.println("novo ack esperado com base no num ack: " + ackEsperado);
-                                retransmitirPacotes(numACK);
-                                while(!acksDuplicados.isEmpty()){
-                                    acksDuplicados.pop();
-                                }
-                               setNumeroSequencia(ackEsperado);
-                            }
-                        }
-                        else{
-                            System.out.println(colors.YELLOW + "ACK " + numACK + " recebido." + colors.RESET);
-                            ackEsperado++;
-                        }
                         System.out.println("ack esperado: " + ackEsperado);
                         System.out.println("resultado ack: "+ numeroSequencia);
                         System.out.println("numero sequencia atual: "+ numeroSequencia);

@@ -47,7 +47,7 @@ public class RecebeDados extends Thread {
         var random = new Random();
         float probabilidadeDePerda = random.nextFloat();
 
-        return probabilidadeDePerda <= 0.6;
+        return probabilidadeDePerda <= 0.2;
     }
 
     private void enviaAck(boolean fim, int seq) {
@@ -94,14 +94,18 @@ public class RecebeDados extends Thread {
 //                    }
 
                     //probabilidade de 60% de perder
-//                    boolean perdido = pacoteFoiPerdido();
-//                    if(perdido & numeroSequencia != 0) {
-//                        System.out.println(colors.CYAN + "Pacote [" + numeroSequencia +"] perdido!!"+ colors.RESET);
-//                        enviaAck(false, ultimoNumeroSequencia);
-//                        enviaAck(false, ultimoNumeroSequencia);
-//                        continue;
-//                    }
+                    boolean perdido = pacoteFoiPerdido();
+                    if(perdido & numeroSequencia != 0) {
+                        System.out.println(colors.CYAN + "Pacote [" + numeroSequencia +"] perdido!!"+ colors.RESET);
+                        enviaAck(false, ultimoNumeroSequencia);
+                        enviaAck(false, ultimoNumeroSequencia);
+                        numeroSequenciaEsperado = ultimoNumeroSequencia;
+                        continue;
+                    }
 
+                    System.out.println("ultimo numero de sequencia: " + ultimoNumeroSequencia);
+                    System.out.println("numero de sequencia esperado: " + numeroSequenciaEsperado);
+                    System.out.println();
                     ultimoNumeroSequencia = numeroSequencia;
 
                     for (int i = 4; i < tmp.length; i = i + 4) {
