@@ -18,7 +18,7 @@ class Timeout{
 
     public Timeout(){
         this.timer = new Timer();
-        this.milliseconds = 1;
+        this.milliseconds = 3000;
     }
 
     public void setMilliseconds(long m){

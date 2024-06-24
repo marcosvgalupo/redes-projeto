@@ -9,18 +9,20 @@ public class Main {
         RecebeDados rd = new RecebeDados();
         rd.start();
 
-        Timeout timeout = new Timeout();
-
         Semaphore sem = new Semaphore(3);
-        EnviaDados ed1 = new EnviaDados(sem, "envia", timeout);
-        EnviaDados ed2 = new EnviaDados(sem, "ack", timeout);
+
+        EnviaDados ed1 = new EnviaDados(sem, "envia");
+        EnviaDados ed2 = new EnviaDados(sem, "ack");
+        EnviaDados t = new EnviaDados(sem, "timeout");
 
         ed2.start();
+        t.start();
         ed1.start();
 
         try {
             ed1.join();
             ed2.join();
+            t.join();
 
             rd.join();
         } catch (InterruptedException ex) {

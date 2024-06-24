@@ -18,6 +18,7 @@ import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.HashMap;
+import java.util.Stack;
 import java.util.TimerTask;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -28,29 +29,25 @@ public class EnviaDados extends Thread {
     private final int portaLocalEnvio = 2000;
     private final int portaDestino = 2001;
     private final int portaLocalRecebimento = 2003;
-    private final Timeout timeout;
-    private HashMap<Integer, int[]> bufferPacotes;
+    private final HashMap<Integer, int[]> bufferPacotes = new HashMap<>();
+    private final Stack<Integer> acksDuplicados = new Stack<Integer>();
+    private static Timeout timeout;
 
     Semaphore sem;
     private final String funcao;
 
 
-    private int numeroTotalDePacotes = 0;
     private static int numeroSequencia = 0;
-    private static int numeroSequenciaPacoteRetransmitido = 0;
+    private static int ackEsperado = 0;
+
 
     private final TerminalColors colors;
 
-    public int getNumeroTotalDePacotes(){
-        return numeroTotalDePacotes;
-    }
 
-    public EnviaDados(Semaphore sem, String funcao, Timeout timeout) {
+    public EnviaDados(Semaphore sem, String funcao) {
         super(funcao);
         this.sem = sem;
         this.funcao = funcao;
-        this.timeout = timeout;
-        this.bufferPacotes = new HashMap<>();
         this.colors = null;
     }
 
@@ -58,32 +55,41 @@ public class EnviaDados extends Thread {
         numeroSequencia++;
     }
 
-    private synchronized void setPacoteRetransmitido(int seq) {
-        numeroSequenciaPacoteRetransmitido = seq;
+
+    private synchronized void setNumeroSequencia(int numero) {
+        EnviaDados.numeroSequencia = numero;
     }
 
-    private synchronized void setNumeroSequencia(int numeroSequencia) {
-        EnviaDados.numeroSequencia = numeroSequencia;
-    }
+    private synchronized void setAckEsperado(int ack) {EnviaDados.ackEsperado = ack;}
 
-    public synchronized void retransmitirPacotes(int seq) throws InterruptedException {
-        sem.acquire();
-        if(bufferPacotes.get(seq) != null){
-            timeout.setMilliseconds(timeout.getMilliseconds() * 2);
 
+    public void retransmitirPacotes(int seq) throws InterruptedException {
+//        for(int i = seq; i < numeroSequencia; i++){
+//            //var timeoutAtual = timeout.getTasks().get(i);
+//            //if(timeoutAtual != null){
+//             //   timeout.stopTimer(i);
+//            //}
+//            //ackEsperado++;
+//        }
+
+
+        if(seq != numeroSequencia){
+            //timeout.setMilliseconds(timeout.getMilliseconds() * 2);
+            System.out.println(colors.RED + "PACOTES " + seq + " ao " + numeroSequencia + " descartados!" + colors.RESET);
             for(int i = seq; i < numeroSequencia; i ++){
-                System.out.println(colors.RED + "RETRANSMITINDO: " + i + colors.RESET);
-                int dadosRetransmitir[] = bufferPacotes.get(i);
-                enviaPct(dadosRetransmitir);
+                if(bufferPacotes.get(i) != null) {
+                    System.out.println(colors.RED + "RETRANSMITINDO: " + i + colors.RESET);
+                    int dadosRetransmitir[] = bufferPacotes.get(i);
+                    System.out.println("numseq: " + seq + "---- dados[0]: " + dadosRetransmitir[0]);
+                    enviaPct(dadosRetransmitir, true);
+                }
             }
         }
-        sem.release();
-    }
-
-    public synchronized void retransmitir2(int[] dados){
-        enviaPct(dados);
-        setNumeroSequencia(dados[0]);
-        timeout.setMilliseconds(timeout.getMilliseconds() * 2);
+        else if (bufferPacotes.get(seq) != null){
+            //timeout.setMilliseconds(timeout.getMilliseconds() * 2);
+            int data[] = bufferPacotes.get(seq);
+            enviaPct(data, true);
+        }
     }
 
     public String getFuncao() {
@@ -91,7 +97,7 @@ public class EnviaDados extends Thread {
     }
 
 
-    private void enviaPct(int[] dados) {
+    private void enviaPct(int[] dados, boolean ehRetransmissao) {
 
         //converte int[] para byte[]
         ByteBuffer byteBuffer = ByteBuffer.allocate(dados.length * 4);
@@ -102,6 +108,7 @@ public class EnviaDados extends Thread {
 
         try {
             System.out.println("Semaforo: " + sem.availablePermits());
+//            if(!ehRetransmissao) sem.acquire();
             sem.acquire();
             System.out.println("Semaforo: " + sem.availablePermits());
 
@@ -116,18 +123,6 @@ public class EnviaDados extends Thread {
 
 
             }
-            timeout.startTimer(new TimerTask() {
-                @Override
-                public void run() {
-                    System.out.println(colors.RED + "TIMEOUT: Pacote " + dados[0] + colors.RESET);
-                    setPacoteRetransmitido(dados[0]);
-                    try {
-                        retransmitirPacotes(dados[0]);
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-            }, dados[0], timeout.getMilliseconds());
             incrementaNumeroSequencia();
         } catch (SocketException ex) {
             Logger.getLogger(EnviaDados.class.getName()).log(Level.SEVERE, null, ex);
@@ -159,7 +154,7 @@ public class EnviaDados extends Thread {
 
                             bufferPacotes.put(dados[0], dados.clone());
 
-                            enviaPct(dados);
+                            enviaPct(dados, false);
                             cont = 1; //reseta para o pŕoximo pacote
                         }
                     }
@@ -168,7 +163,7 @@ public class EnviaDados extends Thread {
                     //o envio dos dados.
                     for (int i = cont; i < 351; i++)
                         dados[i] = -1;
-                    enviaPct(dados);
+                    enviaPct(dados, false);
                 } catch (IOException e) {
                     System.out.println("Error message: " + e.getMessage());
                 }
@@ -177,26 +172,70 @@ public class EnviaDados extends Thread {
                 try {
                     DatagramSocket serverSocket = new DatagramSocket(portaLocalRecebimento);
                     byte[] receiveData = new byte[4];
-                    int numSeq = 0;
-                    while (numSeq != -1) {
+                    int numACK = 0;
+                    while (numACK != -1) {
                         DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                         serverSocket.receive(receivePacket);
                         var b = ByteBuffer.wrap(receivePacket.getData());
-                        numSeq = b.getInt();
-                        if(numSeq == numeroSequenciaPacoteRetransmitido){
-                            //
+                        numACK = b.getInt();
+
+                        if(acksDuplicados.isEmpty()) acksDuplicados.push(numACK);
+                        else{
+                            acksDuplicados.pop();
+                            acksDuplicados.push(numACK);
                         }
-                        timeout.stopTimer(numSeq);
-                        System.out.println(colors.YELLOW + "ACK " + numSeq + " recebido." + colors.RESET);
+
+                        if (numACK != ackEsperado) {
+
+                            System.out.println(colors.MAGENTA + "ACK " + numACK + " DUPLICADO" + colors.RESET);
+
+                            acksDuplicados.push(numACK);
+                            if(acksDuplicados.size() == 3){
+                                System.out.println(colors.RED + "REENVIO DE PACOTE POR 3 ACKS [" + numACK+ "] DUPLICADOS" + colors.RESET);
+                                setAckEsperado(numACK);
+                                System.out.println("novo ack esperado com base no num ack: " + ackEsperado);
+                                retransmitirPacotes(numACK);
+                                while(!acksDuplicados.isEmpty()){
+                                    acksDuplicados.pop();
+                                }
+                               setNumeroSequencia(ackEsperado);
+                            }
+                        }
+                        else{
+                            System.out.println(colors.YELLOW + "ACK " + numACK + " recebido." + colors.RESET);
+                            ackEsperado++;
+                        }
+                        System.out.println("ack esperado: " + ackEsperado);
+                        System.out.println("resultado ack: "+ numeroSequencia);
+                        System.out.println("numero sequencia atual: "+ numeroSequencia);
+                        //System.out.println("PACOTE ATUAL: " + numeroSequencia + "------ timeout hashmap: " + timeout.getTasks());
+                       // timeout.stopTimer(numACK);
                         sem.release();
-                        numeroTotalDePacotes++;
                     }
-                    //System.out.println("Numero total de pacotes: " + numeroTotalDePacotes);
                 } catch (IOException e) {
                     System.out.println("Excecao: " + e.getMessage());
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
                 break;
             //TODO timeout
+            case "timeout":
+//                timeout = new Timeout();
+//                while(numeroSequencia != -1){
+//                    if(timeout.getTasks().get(numeroSequencia) == null){
+//                        timeout.startTimer(new TimerTask() {
+//                            @Override
+//                            public void run() {
+//                                System.out.println(colors.RED + "TIMEOUT: Pacote " + numeroSequencia + colors.RESET);
+//                                try {
+//                                    retransmitirPacotes(numeroSequencia);
+//                                } catch (InterruptedException e) {
+//                                    throw new RuntimeException(e);
+//                                }
+//                            }
+//                        }, numeroSequencia, timeout.getMilliseconds());
+//                    }
+//                }
             default:
 
                 break;

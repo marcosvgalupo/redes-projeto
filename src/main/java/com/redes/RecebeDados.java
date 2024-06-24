@@ -18,6 +18,7 @@ import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Random;
+import java.util.Stack;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -27,9 +28,19 @@ public class RecebeDados extends Thread {
     private final int portaLocalEnviar = 2002;
     private final int portaDestino = 2003;
     private final HashMap<Integer, Boolean> acksSent= new HashMap<>();
+    private final Stack<Integer> acksDuplicados = new Stack<>();
+    private TerminalColors colors;
+    private boolean alreadyReceivePacket;
+    private int ultimoNumeroSequencia;
 
 
     private int numeroSequenciaEsperado = 0;
+
+    public RecebeDados() {
+        this.alreadyReceivePacket = false;
+        this.colors = null;
+        this.ultimoNumeroSequencia = 0;
+    }
 
 
     private boolean pacoteFoiPerdido(){
@@ -76,34 +87,23 @@ public class RecebeDados extends Thread {
                     byte[] tmp = receivePacket.getData();
                     int numeroSequencia = ((tmp[0] & 0xff) << 24) + ((tmp[1] & 0xff) << 16) + ((tmp[2] & 0xff) << 8) + ((tmp[3] & 0xff));
 
-//                    System.out.println("Numero de sequencia atual: " + numeroSequencia);
-//                    System.out.println("numero de sequencia esperado: " + numeroSequenciaEsperado);
-                    boolean perdido = pacoteFoiPerdido();
-                    if(perdido){
-
-                    }
-                    //probabilidade de 60% de perder
-                    //gero um numero aleatorio contido entre [0,1]
-                    //se numero cair no intervalo [0, 0,6)
-                    //significa perda, logo, você não envia ACK
-                    //para esse pacote, e não escreve ele no arquivo saida.
-                    //se o numero cair no intervalo [0,6, 1,0]
-                    //assume-se o recebimento com sucesso.
-
-                    if(numeroSequencia != numeroSequenciaEsperado){
-                        continue;
-                    }
-
+//                    System.out.println("esprrrrrr: " + numeroSequenciaEsperado);
 //                    if(numeroSequencia != numeroSequenciaEsperado){
-//                        System.out.println(numeroSequencia);
-//                        System.out.println(numeroSequenciaEsperado);
-//                        System.out.println("Pacote fora de ordem!!!");
-//                        if(!acksSent.containsKey(numeroSequencia)){
-//                            System.out.println("entrou");
-//                            enviaAck(false, numeroSequencia);
-//                        }
-//                        enviaAck(false, numeroSequencia);
+//                        enviaAck(false, numeroSequenciaEsperado);
+//                        continue;
 //                    }
+
+                    //probabilidade de 60% de perder
+//                    boolean perdido = pacoteFoiPerdido();
+//                    if(perdido & numeroSequencia != 0) {
+//                        System.out.println(colors.CYAN + "Pacote [" + numeroSequencia +"] perdido!!"+ colors.RESET);
+//                        enviaAck(false, ultimoNumeroSequencia);
+//                        enviaAck(false, ultimoNumeroSequencia);
+//                        continue;
+//                    }
+
+                    ultimoNumeroSequencia = numeroSequencia;
+
                     for (int i = 4; i < tmp.length; i = i + 4) {
                             int dados = ((tmp[i] & 0xff) << 24) + ((tmp[i + 1] & 0xff) << 16) + ((tmp[i + 2] & 0xff) << 8) + ((tmp[i + 3] & 0xff));
 
