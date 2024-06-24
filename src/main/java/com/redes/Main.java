@@ -9,9 +9,11 @@ public class Main {
         RecebeDados rd = new RecebeDados();
         rd.start();
 
-        Semaphore sem = new Semaphore(1);
-        EnviaDados ed1 = new EnviaDados(sem, "envia");
-        EnviaDados ed2 = new EnviaDados(sem, "ack");
+        Timeout timeout = new Timeout();
+
+        Semaphore sem = new Semaphore(3);
+        EnviaDados ed1 = new EnviaDados(sem, "envia", timeout);
+        EnviaDados ed2 = new EnviaDados(sem, "ack", timeout);
 
         ed2.start();
         ed1.start();
