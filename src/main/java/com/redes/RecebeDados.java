@@ -30,14 +30,12 @@ public class RecebeDados extends Thread {
     private final HashMap<Integer, Boolean> acksSent= new HashMap<>();
     private final Stack<Integer> acksDuplicados = new Stack<>();
     private TerminalColors colors;
-    private boolean alreadyReceivePacket;
+
+
     private int ultimoNumeroSequencia;
-
-
     private int numeroSequenciaEsperado = 0;
 
     public RecebeDados() {
-        this.alreadyReceivePacket = false;
         this.colors = null;
         this.ultimoNumeroSequencia = 0;
     }
@@ -99,7 +97,7 @@ public class RecebeDados extends Thread {
                         System.out.println(colors.CYAN + "Pacote [" + numeroSequencia +"] perdido!!"+ colors.RESET);
                         enviaAck(false, ultimoNumeroSequencia);
                         enviaAck(false, ultimoNumeroSequencia);
-                        numeroSequenciaEsperado = ultimoNumeroSequencia;
+                        //numeroSequenciaEsperado = ultimoNumeroSequencia;
                         continue;
                     }
 
@@ -113,6 +111,7 @@ public class RecebeDados extends Thread {
 
                             if (dados == -1) {
                                 fim = true;
+                                enviaAck(fim, -1);
                                 break;
                             }
                             fileOutput.write(dados);
