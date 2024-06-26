@@ -17,6 +17,7 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.nio.LongBuffer;
 import java.util.HashMap;
 import java.util.Stack;
 import java.util.logging.Level;
@@ -28,56 +29,73 @@ public class EnviaDados extends Thread {
     private static final int portaLocalEnvio = 2000;
     private static final int portaDestino = 2001;
     private final int portaLocalRecebimento = 2003;
-    private static final HashMap<Integer, byte[]> bufferPacotes = new HashMap<>();
+    private String ipMaquina;
+
+
+    private static final HashMap<Long, byte[]> bufferPacotes = new HashMap<>();
     private static final Stack<Integer> acksDuplicados = new Stack<Integer>();
     private static Timeout timeout;
 
-    static Semaphore sem;
-    private final String funcao;
-    private static boolean precisaRetransmitir = false;
-    private static int primeiroPacoteARetransmitir = 0;
-
-
-    private static int numeroSequencia = 0;
-    private static int ackEsperado = 0;
-    private static boolean packetWasLost = false;
-
-
     private static final TerminalColors colors = null;
 
+    static Semaphore sem;
+    private final String funcao;
+    private static volatile boolean precisaRetransmitir = false;
+    private static long primeiroPacoteARetransmitir = 0;
 
-    public EnviaDados(Semaphore sem, String funcao) {
+
+    private static volatile long numeroSequencia = 0;
+    private static volatile long ackEsperado = 0;
+    private static volatile int numeroAcksDuplicados = 0;
+    private static volatile long ackAnterior = -1;
+
+
+
+    public EnviaDados(Semaphore sem, String funcao, String ipMaquina) {
         super(funcao);
         this.sem = sem;
         this.funcao = funcao;
+        this.ipMaquina = ipMaquina;
     }
 
     private static synchronized void incrementaNumeroSequencia() {
-        numeroSequencia++;
+        if(numeroSequencia == Long.MAX_VALUE)
+            numeroSequencia = 0;
+        else
+            numeroSequencia++;
     }
 
-    private synchronized void setNumeroSequencia(int numero) {
+    private static synchronized void incrementaAckEsperado() {
+        if(ackEsperado == Long.MAX_VALUE)
+            ackEsperado = 0;
+        else
+            ackEsperado++;
+    }
+
+    private static synchronized void setNumeroSequencia(long numero) {
+
         EnviaDados.numeroSequencia = numero;
     }
 
-    private static synchronized void setAckEsperado(int ack) {EnviaDados.ackEsperado = ack;}
+    private static synchronized void setAckEsperado(long ack) {
+        EnviaDados.ackEsperado = ack;
+    }
 
-    private static synchronized void tresAcksDuplicados(int numACK) throws InterruptedException {
+    private static synchronized void tresAcksDuplicados(long numACK) throws InterruptedException {
+        System.out.println("Num ack que chegou: " + numACK);
+        System.out.println("ackesperado: " + ackEsperado);
         if (numACK != ackEsperado && numACK != -1) {
-
+            numeroAcksDuplicados ++;
             System.out.println(colors.MAGENTA + "ACK " + numACK + " DUPLICADO" + colors.RESET);
 
-            if(acksDuplicados.size() == 2){
+            if(numeroAcksDuplicados == 2){
                 System.out.println(colors.RED + "REENVIO DE PACOTE POR TRÊS ACKS [" + numACK+ "] DUPLICADOS" + colors.RESET);
 
                 setAckEsperado(numACK+1);
-                packetWasLost = true;
+
                 precisaRetransmitir = true;
                 primeiroPacoteARetransmitir = numACK+1;
-
-                while(!acksDuplicados.isEmpty()){
-                    acksDuplicados.pop();
-                }
+                numeroAcksDuplicados = 0;
             }
         }
     }
@@ -85,11 +103,11 @@ public class EnviaDados extends Thread {
     public String getFuncao() {return funcao;}
 
 
-    private static void enviaPct(int[] dados, boolean ehRetransmissao) {
+    private static void enviaPct(long[] dados, boolean ehRetransmissao) {
 
         //converte int[] para byte[]
-        ByteBuffer byteBuffer = ByteBuffer.allocate(dados.length * 4);
-        IntBuffer intBuffer = byteBuffer.asIntBuffer();
+        ByteBuffer byteBuffer = ByteBuffer.allocate(dados.length * 8);
+        LongBuffer intBuffer = byteBuffer.asLongBuffer();
         intBuffer.put(dados);
 
         byte[] buffer = byteBuffer.array();
@@ -105,7 +123,8 @@ public class EnviaDados extends Thread {
             try (DatagramSocket datagramSocket = new DatagramSocket(portaLocalEnvio)) {
                 if(precisaRetransmitir){
                     sem.acquire();
-                    for(int i = primeiroPacoteARetransmitir; i <= numeroSequencia; i ++){
+                    System.out.println(colors.RED + "Pacote " + primeiroPacoteARetransmitir + " perdido e Pacotes " + (primeiroPacoteARetransmitir+1)+ " ao " + numeroSequencia +" descartados." + colors.RESET);
+                    for(long i = primeiroPacoteARetransmitir; i <= numeroSequencia; i ++){
 
                         if(bufferPacotes.get(i) != null) {
                             System.out.println(colors.RED + "RETRANSMITINDO: " + i + colors.RESET);
@@ -119,6 +138,8 @@ public class EnviaDados extends Thread {
                             datagramSocket.send(packet);
                         }
                     }
+                    setAckEsperado(primeiroPacoteARetransmitir);
+                    setNumeroSequencia(primeiroPacoteARetransmitir);
                     precisaRetransmitir = false;
                 }
                 else {
@@ -129,8 +150,6 @@ public class EnviaDados extends Thread {
                 }
             }
             incrementaNumeroSequencia();
-        } catch (SocketException ex) {
-            Logger.getLogger(EnviaDados.class.getName()).log(Level.SEVERE, null, ex);
         } catch (IOException | InterruptedException ex) {
             Logger.getLogger(EnviaDados.class.getName()).log(Level.SEVERE, null, ex);
         }
@@ -141,7 +160,7 @@ public class EnviaDados extends Thread {
         switch (this.getFuncao()) {
             case "envia":
 
-                int[] dados = new int[351]; // estrutura: [numeroSequencia, dados....]
+                long[] dados = new long[351]; // estrutura: [numeroSequencia, dados....]
                 //contador, para gerar pacotes com 1404 Bytes de tamanho (1400 bytes de dados e 1 do numero de sequencia)
                 //como cada int ocupa 4 Bytes, estamos lendo blocos com 350 bytes e 1 byte para o número de sequência
 
@@ -175,48 +194,30 @@ public class EnviaDados extends Thread {
                 break;
             case "ack":
                 try {
-                    System.out.println("coringuei");
+
                     DatagramSocket serverSocket = new DatagramSocket(portaLocalRecebimento);
-                    System.out.println("vo nada");
-                    byte[] receiveData = new byte[4];
-                    int numACK = 0;
+                    byte[] receiveData = new byte[8];
+                    long numACK = 0;
+
                     while (numACK != -1) {
                         DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                         serverSocket.receive(receivePacket);
                         var b = ByteBuffer.wrap(receivePacket.getData());
-                        numACK = b.getInt();
+                        numACK = b.getLong();
 
-                        System.out.println("ackzin dos cria: " + numACK);
                         tresAcksDuplicados(numACK);
-                        if(acksDuplicados.isEmpty()) {
-                            acksDuplicados.push(numACK);
-                            ackEsperado++; // 1
-                        }
-                        else if(numACK == acksDuplicados.pop()){
-                            acksDuplicados.push(numACK);
-                            acksDuplicados.push(numACK);
-                        }
-                        else{
-                            acksDuplicados.push(numACK);
-                            ackEsperado++;
-                        }
-                        //tresAcksDuplicados(numACK);
 
-
-                        System.out.println("ack esperado: " + ackEsperado);
-                        System.out.println("resultado ack: "+ numeroSequencia);
-                        System.out.println("numero sequencia atual: "+ numeroSequencia);
-                        //System.out.println("PACOTE ATUAL: " + numeroSequencia + "------ timeout hashmap: " + timeout.getTasks());
-                       // timeout.stopTimer(numACK);
                         if(numACK == -1)
                             System.out.println(colors.YELLOW + "ACK " + (numeroSequencia-1) + " recebido." + colors.RESET);
-                        else
+                        else if(numACK == ackEsperado)
                             System.out.println(colors.YELLOW + "ACK " + numACK + " recebido." + colors.RESET);
 
-                        if(numACK == -1){
+                        if(numACK == -1 && numACK != ackEsperado){
                             serverSocket.close();
                             break;
                         }
+
+                        incrementaAckEsperado();
                         sem.release();
                     }
                 } catch (IOException e) {
