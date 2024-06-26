@@ -16,9 +16,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Random;
-import java.util.Stack;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -28,8 +26,9 @@ public class RecebeDados extends Thread {
     private final int portaLocalEnviar = 2002;
     private final int portaDestino = 2003;
     private final HashMap<Integer, Boolean> acksSent= new HashMap<>();
-    private final Stack<Integer> acksDuplicados = new Stack<>();
-    private TerminalColors colors;
+    private final Queue<Integer> pacotesPerdidos= new LinkedList<>();
+    private final TerminalColors colors;
+    private boolean packetWasLost;
 
 
     private int ultimoNumeroSequencia;
@@ -38,6 +37,7 @@ public class RecebeDados extends Thread {
     public RecebeDados() {
         this.colors = null;
         this.ultimoNumeroSequencia = 0;
+        this.packetWasLost = false;
     }
 
 
@@ -60,6 +60,7 @@ public class RecebeDados extends Thread {
                 DatagramPacket packet = new DatagramPacket(
                         sendData, sendData.length, address, portaDestino);
                 datagramSocket.send(packet);
+                System.out.println("seq seq seq: " + seq);
                 acksSent.put(seq,true);
             }
         } catch (SocketException ex) {
@@ -80,7 +81,7 @@ public class RecebeDados extends Thread {
                     DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                     serverSocket.receive(receivePacket);
 
-                    System.out.println("pacote recebido.");
+
 
                     byte[] tmp = receivePacket.getData();
                     int numeroSequencia = ((tmp[0] & 0xff) << 24) + ((tmp[1] & 0xff) << 16) + ((tmp[2] & 0xff) << 8) + ((tmp[3] & 0xff));
@@ -93,20 +94,33 @@ public class RecebeDados extends Thread {
 
                     //probabilidade de 60% de perder
                     boolean perdido = pacoteFoiPerdido();
-                    if(perdido & numeroSequencia != 0) {
+                    if(perdido && numeroSequencia != 0) {
                         System.out.println(colors.CYAN + "Pacote [" + numeroSequencia +"] perdido!!"+ colors.RESET);
+                        System.out.println("quando ele foi perdido numseq: " + numeroSequencia);
+                        System.out.println("quando ele foi perdido numseqEsp: " + numeroSequenciaEsperado);
+                        System.out.println("quando ele foi perdido numseqUlt: " + ultimoNumeroSequencia);
+
+                        pacotesPerdidos.add(numeroSequencia);
+                        packetWasLost = true;
                         enviaAck(false, ultimoNumeroSequencia);
                         enviaAck(false, ultimoNumeroSequencia);
                         //numeroSequenciaEsperado = ultimoNumeroSequencia;
                         continue;
                     }
-
+                    if(packetWasLost && acksSent.get(numeroSequencia) != null && numeroSequencia == numeroSequenciaEsperado){
+                        System.out.println("oi");
+                    }
+                    else if(numeroSequencia == numeroSequenciaEsperado){
+                        packetWasLost = false;
+                    }
+                    System.out.println(colors.BLUE+"[Pacote recebido "+ numeroSequencia +"]." + colors.RESET);
                     System.out.println("ultimo numero de sequencia: " + ultimoNumeroSequencia);
                     System.out.println("numero de sequencia esperado: " + numeroSequenciaEsperado);
-                    System.out.println();
-                    ultimoNumeroSequencia = numeroSequencia;
-
-                    for (int i = 4; i < tmp.length; i = i + 4) {
+                    System.out.println("ack recebido atual: " + numeroSequencia);
+                    if(!packetWasLost) {
+                        ultimoNumeroSequencia = numeroSequencia;
+                        System.out.println("novo ultimo num sequencia: " + ultimoNumeroSequencia);
+                        for (int i = 4; i < tmp.length; i = i + 4) {
                             int dados = ((tmp[i] & 0xff) << 24) + ((tmp[i + 1] & 0xff) << 16) + ((tmp[i + 2] & 0xff) << 8) + ((tmp[i + 3] & 0xff));
 
                             if (dados == -1) {
@@ -115,9 +129,12 @@ public class RecebeDados extends Thread {
                                 break;
                             }
                             fileOutput.write(dados);
+                        }
+                        System.out.println("enviando ack para o num: " + numeroSequenciaEsperado);
+                        enviaAck(fim, numeroSequenciaEsperado);
+                        acksSent.put(numeroSequencia, true);
+                        numeroSequenciaEsperado++;
                     }
-                    enviaAck(fim, numeroSequenciaEsperado);
-                    numeroSequenciaEsperado++;
                 }
             }
         } catch (IOException e) {
